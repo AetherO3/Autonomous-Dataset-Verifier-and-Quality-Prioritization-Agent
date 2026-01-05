@@ -1,0 +1,4 @@
+*.csv
+*.jsonl
+compressed
+.DS_Store
