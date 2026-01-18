@@ -20,7 +20,7 @@ missingCount = df.isna().sum()
 print(missingCount, "\n")
 
 missingPerc = df.isna().mean() * 100
-print("The percentage of mising values in each columns is : \n\n",round(missingPerc, 2))
+print("The percentage of mising values in each columns is : \n\n",round(missingPerc, 10))
 
 
 # Finding noise and inconsistencies and fixing the datatypes
