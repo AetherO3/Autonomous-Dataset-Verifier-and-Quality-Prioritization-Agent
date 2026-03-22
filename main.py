@@ -1,12 +1,10 @@
-from app.data.loader import load_dataset
-from app.data.profiler import profile_dataframe
+from app.core.llm_interpreter import interpret_issue
+from app.core.recommender import recommend_actions
 from app.data.issue_detector import detect_issues
-
-from app.core.llm_engine import generate_llm_decision
-from app.core.decision_layer import validate_decision
-
-from app.actions import apply_action
-from app.logger import log_operation
+from app.data.profiler import profile_dataframe
+from app.core.report import generate_report
+from app.data.loader import load_dataset
+from app.core.ranker import rank_issues
 
 
 def run_pipeline(dataset_name: str):
@@ -15,34 +13,33 @@ def run_pipeline(dataset_name: str):
     profile = profile_dataframe(df)
     issues = detect_issues(profile)
 
+    all_issues = []
+
     for col in df.columns:
         column_profile = profile[col]
         column_issues = issues.get(col, [])
 
-        decision = generate_llm_decision(column_profile, column_issues)
-        validated_decision = validate_decision(decision)
+        if not column_issues:
+            continue
 
-        before = df[col].copy()
+        # Step 1: rule-based options
+        options = recommend_actions(column_profile, column_issues)
 
-        df = apply_action(df, col, validated_decision)
+        # Step 2: LLM explanation (NO decisions executed)
+        analysis = interpret_issue(column_profile, column_issues, options)
 
-        after = df[col] if col in df.columns else None
+        all_issues.append({
+            "column": col,
+            "issues": column_issues,
+            "profile": column_profile,
+            "options": options,
+            "analysis": analysis
+        })
 
-        log_operation(
-            col=col,
-            action=validated_decision["recommended_action"],
-            before=before,
-            after=after
-        )
+    # Step 3: prioritize
+    ranked = rank_issues(all_issues)
 
-    return df
+    # Step 4: generate report
+    report = generate_report(ranked)
 
-
-if __name__ == "__main__":
-    # DATASET = "karkavelrajaj/amazon-sales-dataset"
-    DATASET = "data/amazon.csv"
-
-    final_df = run_pipeline(DATASET)
-
-    print("\nFinal dataset preview:")
-    print(final_df.head())
+    return report
