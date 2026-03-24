@@ -11,6 +11,7 @@ def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
 
     profile = profile_dataframe(df)
+    print(list(profile.items())[:10])
     issues = detect_issues(profile)
 
     all_issues = []
@@ -43,3 +44,5 @@ def run_pipeline(dataset_name: str):
     report = generate_report(ranked)
 
     return report
+
+run_pipeline("data/amazon.csv")
