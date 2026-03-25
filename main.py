@@ -11,8 +11,10 @@ def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
 
     profile = profile_dataframe(df)
-    print(list(profile.items())[:10])
+    print(list(profile.items())[:5])
     issues = detect_issues(profile)
+
+    print("\n\n",list(issues.items())[:5])
 
     all_issues = []
 
