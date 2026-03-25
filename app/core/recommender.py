@@ -1,14 +1,30 @@
 def recommend_actions(column_profile: dict, issues: list) -> list:
+    options = set()
 
-    options = []
+    column_type = column_profile.get("column_type", "scalar")
 
     if "high_missing" in issues:
-        options = ["fill_mean", "fill_median", "drop_rows", "leave"]
+        options.update(["fill_mean", "fill_median", "fill_mode", "drop_rows", "leave"])
 
-    elif "constant_column" in issues:
-        options = ["drop_column", "keep"]
+    if "constant_column" in issues:
+        options.update(["drop_column", "leave"])
 
-    elif "high_cardinality" in issues:
-        options = ["group_categories", "encode", "leave"]
+    if "high_cardinality" in issues:
+        options.update(["encode", "group_categories", "leave"])
 
-    return options
+    if "near_constant" in issues:
+        options.update(["drop_column", "leave"])
+
+    if "id_like_column" in issues:
+        options.update(["drop_column", "leave"])
+
+    if "nested_data" in issues:
+        options.update(["leave"])  
+
+    if not options:
+        options.add("leave")
+
+    if column_type == "nested":
+        options = {"leave"} if "leave" in options else options
+
+    return sorted(options)

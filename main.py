@@ -5,16 +5,16 @@ from app.data.profiler import profile_dataframe
 from app.core.report import generate_report
 from app.data.loader import load_dataset
 from app.core.ranker import rank_issues
+from openai import OpenAI
 
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
+    client = OpenAI(api_key="key")
 
     profile = profile_dataframe(df)
-    print(list(profile.items())[:5])
-    issues = detect_issues(profile)
 
-    print("\n\n",list(issues.items())[:5])
+    issues = detect_issues(profile)
 
     all_issues = []
 
@@ -25,11 +25,9 @@ def run_pipeline(dataset_name: str):
         if not column_issues:
             continue
 
-        # Step 1: rule-based options
         options = recommend_actions(column_profile, column_issues)
 
-        # Step 2: LLM explanation (NO decisions executed)
-        analysis = interpret_issue(column_profile, column_issues, options)
+        analysis = interpret_issue(client, column_profile, column_issues, options)
 
         all_issues.append({
             "column": col,
@@ -39,10 +37,8 @@ def run_pipeline(dataset_name: str):
             "analysis": analysis
         })
 
-    # Step 3: prioritize
     ranked = rank_issues(all_issues)
 
-    # Step 4: generate report
     report = generate_report(ranked)
 
     return report
