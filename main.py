@@ -5,12 +5,16 @@ from app.data.profiler import profile_dataframe
 from app.core.report import generate_report
 from app.data.loader import load_dataset
 from app.core.ranker import rank_issues
-from openai import OpenAI
-
+import google.genai as genai
+import creds
+import time
+# from openai import OpenAI
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
-    client = OpenAI(api_key="key")
+    #client = OpenAI(api_key="key")
+
+    client = genai.Client(api_key=creds.gemini_key)
 
     profile = profile_dataframe(df)
 
@@ -37,10 +41,16 @@ def run_pipeline(dataset_name: str):
             "analysis": analysis
         })
 
+        time.sleep(8)
+
     ranked = rank_issues(all_issues)
 
     report = generate_report(ranked)
 
     return report
 
-run_pipeline("data/amazon.csv")
+report = run_pipeline("data/amazon.csv")
+
+for idx, r in enumerate(report):
+    print("\n\n",report)
+    

@@ -1,4 +1,6 @@
 import json
+import google.genai as genai
+from google.genai import types
 from typing import Dict, List
 
 
@@ -18,7 +20,7 @@ Rules:
 - Respect column_type (nested data should not use numeric imputations)
 
 Allowed actions:
-["fill_mean", "fill_median", "fill_mode", "drop_rows", "drop_column", "leave"]
+["fill_mean", "fill_median", "fill_mode", "drop_rows", "drop_column", "leave", "encode", "group_categories"]
 
 Output format:
 {
@@ -53,6 +55,7 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
 
     if "constant_column" in issues and "drop_column" in options:
         action = "drop_column"
+    
     elif "high_missing" in issues:
         for opt in ["fill_median", "fill_mean", "fill_mode", "leave"]:
             if opt in options:
@@ -60,8 +63,21 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
                 break
         else:
             action = options[0]
+    
     elif "nested_data" in issues:
         action = "leave" if "leave" in options else options[0]
+    
+    elif "high_cardinality" in issues:
+        for opt in ["encode", "group_categories", "leave"]:
+            if opt in options:
+                action = opt
+                break
+        else:
+            action = options[0]
+    
+    elif "id_like_column" in issues or "near_constant" in issues:  # <-- here
+        action = "drop_column" if "drop_column" in options else "leave"
+    
     else:
         action = options[0]
 
@@ -77,16 +93,14 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
     payload = build_payload(column_profile, issues, options)
 
     try:
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",  
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(payload)}
-            ],
-            temperature=0.2
-        )
+        # response = client.chat.completions.create(model="gpt-4.1-mini",  messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": json.dumps(payload)}],temperature=0.2)
 
-        text = response.choices[0].message.content.strip()
+        # text = response.choices[0].message.content.strip()
+
+        response = client.models.generate_content(model="gemini-2.5-flash", contents=f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
+        config=types.GenerateContentConfig(response_mime_type="application/json"))
+
+        text = response.text.strip()
 
         result = json.loads(text)
 
@@ -94,6 +108,7 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
             raise ValueError("Invalid response format")
 
         required_keys = {"explanation", "risk", "recommended_option", "confidence"}
+        
         if not required_keys.issubset(result.keys()):
             raise ValueError("Missing keys")
 
@@ -108,5 +123,6 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
 
         return result
 
-    except Exception:
+    except Exception as e:
+        print(f"LLM call failed for column: {e}")
         return safe_fallback(column_profile, issues, options)

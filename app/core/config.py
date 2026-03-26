@@ -1,6 +1,4 @@
-# Just a placeholder, me poor rn!!!
-
-MODEL_NAME = "gpt-4o-mini" 
+MODEL_NAME = "gemini-2.0-flash" 
 CONFIDENCE_THRESHOLD = 0.7
 
 ALLOWED_ACTIONS = ["impute", "drop", "convert", "flag", "ignore"]

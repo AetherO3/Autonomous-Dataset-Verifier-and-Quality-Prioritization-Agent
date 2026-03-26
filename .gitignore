@@ -1,5 +1,6 @@
 *.csv
 *.jsonl
 .DS_Store
-./data
+data/
 temp.py
+creds.py
