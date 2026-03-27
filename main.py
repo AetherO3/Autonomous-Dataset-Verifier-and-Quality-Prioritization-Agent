@@ -53,4 +53,3 @@ report = run_pipeline("data/amazon.csv")
 
 for idx, r in enumerate(report):
     print("\n\n",report)
-    
