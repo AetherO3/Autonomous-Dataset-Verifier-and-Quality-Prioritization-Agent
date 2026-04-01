@@ -5,20 +5,18 @@ from app.dataProcessor.profiler import profile_dataframe
 from app.core.report import generate_report
 from app.dataProcessor.loader import load_dataset
 from app.core.ranker import rank_issues
+from app.core.applier import apply_actions
 import google.genai as genai
 import creds
 import time
-# from openai import OpenAI
+
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
-    #client = OpenAI(api_key="key")
-
     client = genai.Client(api_key=creds.gemini_key)
 
     profile = profile_dataframe(df)
-
-    issues = detect_issues(profile)
+    issues = detect_issues(profile, df)
 
     all_issues = []
 
@@ -30,7 +28,6 @@ def run_pipeline(dataset_name: str):
             continue
 
         options = recommend_actions(column_profile, column_issues)
-
         analysis = interpret_issue(client, column_profile, column_issues, options)
 
         all_issues.append({
@@ -38,22 +35,25 @@ def run_pipeline(dataset_name: str):
             "issues": column_issues,
             "profile": column_profile,
             "options": options,
-            "analysis": analysis
+            "analysis": analysis,
         })
 
         time.sleep(8)
 
     ranked = rank_issues(all_issues)
-
     report = generate_report(ranked)
 
-    return report
+    cleaned_df, original_df = apply_actions(df, report)
 
-report = run_pipeline("data/appliances.jsonl")
+    return report, cleaned_df, original_df
 
-for idx, r in enumerate(report['issues']):
-    analysis = r['analysis']
-    print(f"\n{idx} - Column: {r['column']}")
-    print(f"Recommended: {analysis['recommended_option']} - Confidence: {analysis['confidence']}")
 
-print("\n\n\n",report)
+report, cleaned_df, original_df = run_pipeline("data/Tester.jsonl")
+
+for idx, r in enumerate(report["issues"]):
+    print(f"\n{idx + 1} - Column: {r['column']}")
+    print(f"   Issues: {r['issues']}")
+    print(f"   Action: {r['analysis']['recommended_option']} (confidence: {r['analysis']['confidence']})")
+
+print(f"\nOriginal shape: {original_df.shape}")
+print(f"Cleaned shape:  {cleaned_df.shape}")

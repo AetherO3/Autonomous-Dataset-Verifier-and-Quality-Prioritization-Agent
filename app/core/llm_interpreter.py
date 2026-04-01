@@ -35,7 +35,6 @@ Output format:
 
 def build_payload(column_profile: dict, issues: List[str], options: List[str]) -> dict:
     sample = column_profile.get("sample", [])[:3]
-    
     sample = [str(s) if isinstance(s, (pd.Timestamp, bool)) else s for s in sample]
     return {
         "dtype": column_profile.get("dtype"),
@@ -44,7 +43,7 @@ def build_payload(column_profile: dict, issues: List[str], options: List[str]) -
         "unique_ratio": column_profile.get("unique_ratio"),
         "issues": issues,
         "options": options,
-        "sample": sample
+        "sample": sample,
     }
 
 
@@ -54,12 +53,11 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
             "explanation": "No options available",
             "risk": "low",
             "recommended_option": None,
-            "confidence": 0.0
+            "confidence": 0.0,
         }
 
     if "constant_column" in issues and "drop_column" in options:
         action = "drop_column"
-    
     elif "high_missing" in issues:
         for opt in ["fill_median", "fill_mean", "fill_mode", "leave"]:
             if opt in options:
@@ -67,10 +65,8 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
                 break
         else:
             action = options[0]
-    
     elif "nested_data" in issues:
         action = "leave" if "leave" in options else options[0]
-    
     elif "high_cardinality" in issues:
         for opt in ["encode", "group_categories", "leave"]:
             if opt in options:
@@ -78,10 +74,8 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
                 break
         else:
             action = options[0]
-    
-    elif "id_like_column" in issues or "near_constant" in issues:  # <-- here
+    elif "id_like_column" in issues or "near_constant" in issues:
         action = "drop_column" if "drop_column" in options else "leave"
-    
     else:
         action = options[0]
 
@@ -89,7 +83,7 @@ def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -
         "explanation": "Fallback decision applied",
         "risk": "medium",
         "recommended_option": action,
-        "confidence": 0.5
+        "confidence": 0.5,
     }
 
 
@@ -97,36 +91,32 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
     payload = build_payload(column_profile, issues, options)
 
     try:
-        # response = client.chat.completions.create(model="gpt-4.1-mini",  messages=[{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": json.dumps(payload)}],temperature=0.2)
-
-        # text = response.choices[0].message.content.strip()
-
-        response = client.models.generate_content(model="gemini-2.5-flash", contents=f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
-        config=types.GenerateContentConfig(response_mime_type="application/json"))
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
+            config=types.GenerateContentConfig(response_mime_type="application/json"),
+        )
 
         text = response.text.strip()
-
         result = json.loads(text)
 
         if not isinstance(result, dict):
-            raise ValueError("Invalid response format")
+            raise ValueError
 
         required_keys = {"explanation", "risk", "recommended_option", "confidence"}
-        
         if not required_keys.issubset(result.keys()):
-            raise ValueError("Missing keys")
+            raise ValueError
 
-        if result["recommended_option"] not in options:
-            raise ValueError("Invalid option selected")
+        if not isinstance(result["recommended_option"], str) or result["recommended_option"] not in options:
+            raise ValueError
 
         if result["risk"] not in {"low", "medium", "high"}:
-            raise ValueError("Invalid risk level")
+            raise ValueError
 
         result["confidence"] = float(result["confidence"])
         result["confidence"] = max(0.0, min(1.0, result["confidence"]))
 
         return result
 
-    except Exception as e:
-        print(f"LLM call failed for column: {e}")
+    except Exception:
         return safe_fallback(column_profile, issues, options)

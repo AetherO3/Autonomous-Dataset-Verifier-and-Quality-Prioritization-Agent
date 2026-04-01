@@ -1,6 +1,5 @@
 def recommend_actions(column_profile: dict, issues: list) -> list:
     options = set()
-
     column_type = column_profile.get("column_type", "scalar")
 
     if "high_missing" in issues:
@@ -19,12 +18,18 @@ def recommend_actions(column_profile: dict, issues: list) -> list:
         options.update(["drop_column", "leave"])
 
     if "nested_data" in issues:
-        options.update(["leave"])  
+        options.update(["leave"])
 
     if not options:
         options.add("leave")
 
     if column_type == "nested":
         options = {"leave"} if "leave" in options else options
+
+    if "high_skewness" in issues:
+        options.update(["leave"])
+
+    if "high_zeros" in issues:
+        options.update(["drop_column", "leave"])
 
     return sorted(options)
