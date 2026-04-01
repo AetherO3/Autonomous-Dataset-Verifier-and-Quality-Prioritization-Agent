@@ -49,7 +49,7 @@ def run_pipeline(dataset_name: str):
 
     return report
 
-report = run_pipeline("data/amazon.csv")
+report = run_pipeline("data/appliances.jsonl")
 
 for idx, r in enumerate(report['issues']):
     analysis = r['analysis']

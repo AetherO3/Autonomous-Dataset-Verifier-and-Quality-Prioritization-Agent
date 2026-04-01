@@ -1,4 +1,5 @@
 import json
+import pandas as pd
 import google.genai as genai
 from google.genai import types
 from typing import Dict, List
@@ -33,6 +34,9 @@ Output format:
 
 
 def build_payload(column_profile: dict, issues: List[str], options: List[str]) -> dict:
+    sample = column_profile.get("sample", [])[:3]
+    
+    sample = [str(s) if isinstance(s, (pd.Timestamp, bool)) else s for s in sample]
     return {
         "dtype": column_profile.get("dtype"),
         "column_type": column_profile.get("column_type"),
@@ -40,7 +44,7 @@ def build_payload(column_profile: dict, issues: List[str], options: List[str]) -
         "unique_ratio": column_profile.get("unique_ratio"),
         "issues": issues,
         "options": options,
-        "sample": column_profile.get("sample", [])[:3]
+        "sample": sample
     }
 
 

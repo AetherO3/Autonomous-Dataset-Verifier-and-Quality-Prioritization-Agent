@@ -10,13 +10,13 @@ def detect_issues(profile: dict) -> dict:
         if stats["unique"] == 1:
             col_issues.append("constant_column")
 
-        if stats["unique_ratio"] > 0.9:
+        if stats["unique_ratio"] > 0.9 and "datetime" not in stats["dtype"]:
             col_issues.append("high_cardinality")
 
         if stats["unique"] > 1 and stats["unique_ratio"] < 0.01:
             col_issues.append("near_constant")
 
-        if stats["unique_ratio"] == 1.0:
+        if stats["unique_ratio"] == 1.0 and "datetime" not in stats["dtype"]:
             col_issues.append("id_like_column")
 
         if stats.get("column_type") == "nested":
