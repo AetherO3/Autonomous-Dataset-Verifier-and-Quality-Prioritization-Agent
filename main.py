@@ -53,7 +53,7 @@ report = run_pipeline("data/amazon.csv")
 
 for idx, r in enumerate(report['issues']):
     analysis = r['analysis']
-    print(f"\n{idx} | Column: {r['column']}")
-    print(f"Recommended: {analysis['recommended_option']} | Confidence: {analysis['confidence']}")
+    print(f"\n{idx} - Column: {r['column']}")
+    print(f"Recommended: {analysis['recommended_option']} - Confidence: {analysis['confidence']}")
 
 print("\n\n\n",report)
