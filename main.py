@@ -1,9 +1,9 @@
 from app.core.llm_interpreter import interpret_issue
 from app.core.recommender import recommend_actions
-from app.data.issue_detector import detect_issues
-from app.data.profiler import profile_dataframe
+from app.dataProcessor.issue_detector import detect_issues
+from app.dataProcessor.profiler import profile_dataframe
 from app.core.report import generate_report
-from app.data.loader import load_dataset
+from app.dataProcessor.loader import load_dataset
 from app.core.ranker import rank_issues
 import google.genai as genai
 import creds
@@ -51,5 +51,9 @@ def run_pipeline(dataset_name: str):
 
 report = run_pipeline("data/amazon.csv")
 
-for idx, r in enumerate(report):
-    print("\n\n",report)
+for idx, r in enumerate(report['issues']):
+    analysis = r['analysis']
+    print(f"\n{idx} | Column: {r['column']}")
+    print(f"Recommended: {analysis['recommended_option']} | Confidence: {analysis['confidence']}")
+
+print("\n\n\n",report)
