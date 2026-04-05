@@ -1,4 +1,5 @@
 from app.dataProcessor.issue_detector import detect_issues
+from app.core.relation_analyzer import analyze_relations
 from app.dataProcessor.profiler import profile_dataframe
 from app.core.llm_interpreter import interpret_issue
 from app.core.recommender import recommend_actions
@@ -15,9 +16,10 @@ import time
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
-    client = genai.Client(api_key=creds.gemini_key)
+    client = genai.Client(api_key = creds.gemini_key)
 
     profile = profile_dataframe(df)
+    relations = analyze_relations(client, profile)
     issues = detect_issues(profile, df)
 
     all_issues = []
@@ -43,7 +45,7 @@ def run_pipeline(dataset_name: str):
         time.sleep(RATE_LIMIT_SLEEP)
 
     ranked = rank_issues(all_issues)
-    report = generate_report(ranked)
+    report = generate_report(ranked, relations)
 
     cleaned_df, original_df = apply_actions(df, report)
 

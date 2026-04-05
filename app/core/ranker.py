@@ -6,7 +6,5 @@ def rank_issues(issues: list) -> list:
         key=lambda x: (
             SEVERITY_WEIGHT.get(x["analysis"].get("risk", "low"), 1),
             x["profile"].get("null_perc", 0),
-            x["analysis"].get("confidence", 0),
-        ),
-        reverse=True,
-    )
+            x["analysis"].get("confidence", 0),),
+            reverse=True,)

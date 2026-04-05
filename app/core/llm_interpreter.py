@@ -92,9 +92,9 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
-            config=types.GenerateContentConfig(response_mime_type="application/json"),
+            model = "gemini-2.5-flash",
+            contents = f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
+            config = types.GenerateContentConfig(response_mime_type="application/json"),
         )
 
         text = response.text.strip()
