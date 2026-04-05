@@ -1,0 +1,11 @@
+great_expectations==1.8.1
+kagglehub==1.0.0
+pandas==2.2.3
+Pillow==12.2.0
+protobuf==7.34.1
+Requests==2.33.1
+torch==2.8.0
+transformers==4.57.1
+ydata_profiling==4.17.0
+google-genai
+torchvision

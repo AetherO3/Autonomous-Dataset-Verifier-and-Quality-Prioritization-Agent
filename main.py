@@ -1,3 +1,4 @@
+from app.vision.quality_checker import check_image_text_consistency
 from app.dataProcessor.issue_detector import detect_issues
 from app.core.relation_analyzer import analyze_relations
 from app.dataProcessor.profiler import profile_dataframe
@@ -47,10 +48,25 @@ def run_pipeline(dataset_name: str):
     ranked = rank_issues(all_issues)
     report = generate_report(ranked, relations)
 
-    cleaned_df, original_df = apply_actions(df, report)
+    cleaned_df, original_df, flagged = apply_actions(df, report)
+
+    vision_results = check_image_text_consistency(df)
+    
+    if vision_results:
+        print("\nVision Quality Check")
+        for v in vision_results:
+            flag = "Flagged" if v["flagged"] else "Okay"
+            print(f"  {v['image_column']} <-> {v['text_column']} | score: {v['semantic_match_score']} | {flag}")
 
     for entry in get_logs():
         print(f"[LOG] {entry['column']} | {entry['action']} | {entry['timestamp']}")
+
+    cleaned_df, original_df, flagged = apply_actions(df, report)
+
+    if flagged:
+        print("\nFlagged : low confidence")
+        for f in flagged:
+            print(f"  {f['column']} | {f['action']} | confidence: {f['confidence']:.2f}")
 
     return report, cleaned_df, original_df
 

@@ -2,10 +2,13 @@ import pandas as pd
 from app.logger import log_operation
 from app.core.config import CONFIDENCE_THRESHOLD
 
+FLAG_THRESHOLD = 0.5
 
-def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+
+def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.DataFrame, list]:
     original_df = df.copy()
     cleaned_df = df.copy()
+    flagged = []
 
     for issue in report["issues"]:
         col = issue["column"]
@@ -15,8 +18,18 @@ def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.Data
         if col not in cleaned_df.columns:
             continue
 
-        if confidence < CONFIDENCE_THRESHOLD:
+        if confidence < FLAG_THRESHOLD:
             log_operation(col, "skipped", cleaned_df[col], None)
+            continue
+
+        if confidence < CONFIDENCE_THRESHOLD:
+            flagged.append({
+                "column": col,
+                "action": action,
+                "confidence": confidence,
+                "reason": issue["analysis"].get("explanation", ""),
+            })
+            log_operation(col, "flagged", cleaned_df[col], None)
             continue
 
         before = cleaned_df[col].copy()
@@ -46,4 +59,4 @@ def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.Data
 
         log_operation(col, action, before, cleaned_df[col])
 
-    return cleaned_df, original_df
+    return cleaned_df, original_df, flagged

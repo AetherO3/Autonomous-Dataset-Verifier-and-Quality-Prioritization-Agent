@@ -1,6 +1,7 @@
-*.csv
-*.jsonl
 .DS_Store
 data/
 temp.py
 creds.py
+__pycache__/
+*.pyc
+.env
