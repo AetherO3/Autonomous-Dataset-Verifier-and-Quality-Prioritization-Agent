@@ -119,4 +119,5 @@ def interpret_issue(client, column_profile: dict, issues: List[str], options: Li
         return result
 
     except Exception:
+        print("LLM response failed...\nResorting to Safe Fallback.")
         return safe_fallback(column_profile, issues, options)

@@ -1,11 +1,13 @@
-from app.core.llm_interpreter import interpret_issue
-from app.core.recommender import recommend_actions
 from app.dataProcessor.issue_detector import detect_issues
 from app.dataProcessor.profiler import profile_dataframe
-from app.core.report import generate_report
+from app.core.llm_interpreter import interpret_issue
+from app.core.recommender import recommend_actions
 from app.dataProcessor.loader import load_dataset
-from app.core.ranker import rank_issues
+from app.core.config import RATE_LIMIT_SLEEP
+from app.core.report import generate_report
 from app.core.applier import apply_actions
+from app.core.ranker import rank_issues
+from app.logger import get_logs
 import google.genai as genai
 import creds
 import time
@@ -38,17 +40,20 @@ def run_pipeline(dataset_name: str):
             "analysis": analysis,
         })
 
-        time.sleep(8)
+        time.sleep(RATE_LIMIT_SLEEP)
 
     ranked = rank_issues(all_issues)
     report = generate_report(ranked)
 
     cleaned_df, original_df = apply_actions(df, report)
 
+    for entry in get_logs():
+        print(f"[LOG] {entry['column']} | {entry['action']} | {entry['timestamp']}")
+
     return report, cleaned_df, original_df
 
 
-report, cleaned_df, original_df = run_pipeline("data/Tester.jsonl")
+report, cleaned_df, original_df = run_pipeline("data/amazon.csv")
 
 for idx, r in enumerate(report["issues"]):
     print(f"\n{idx + 1} - Column: {r['column']}")
