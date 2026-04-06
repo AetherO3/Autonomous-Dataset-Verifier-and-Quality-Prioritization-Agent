@@ -1,4 +1,4 @@
-MODEL_NAME = "gemini-2.5-flash"
+MODEL_NAME = "gemini-2.5-flash-lite"
 CONFIDENCE_THRESHOLD = 0.7
 RATE_LIMIT_SLEEP = 8
 

@@ -4,3 +4,4 @@
 data/
 temp.py
 creds.py
+__pycache__

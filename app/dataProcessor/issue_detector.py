@@ -2,6 +2,16 @@ import great_expectations as gx
 import pandas as pd
 
 
+def is_url_or_id_column(col: str, stats: dict) -> bool:
+    name_hints = ("_id", "_link", "_url", "_uri", "_href", "_src")
+    if any(col.lower().endswith(h) for h in name_hints):
+        return True
+    sample_vals = [str(v) for v in stats.get("sample", [])]
+    if any(v.startswith("http") for v in sample_vals):
+        return True
+    return False
+
+
 def detect_issues(profile: dict, df: pd.DataFrame) -> dict:
     context = gx.get_context(mode="ephemeral")
     datasource = context.data_sources.add_pandas("pandas_source")
@@ -16,7 +26,7 @@ def detect_issues(profile: dict, df: pd.DataFrame) -> dict:
         col_issues = []
 
         if stats["null_perc"] > 0.3:
-            result = batch.expect_column_values_to_not_be_null(column=col)
+            result = batch.expect_column_values_to_not_be_null(column = col)
             if not result.success:
                 col_issues.append("high_missing")
 
@@ -25,11 +35,18 @@ def detect_issues(profile: dict, df: pd.DataFrame) -> dict:
         elif stats["unique"] > 1 and stats["unique_ratio"] < 0.01:
             col_issues.append("near_constant")
 
-        if stats["unique_ratio"] > 0.9 and stats["column_type"] not in ("datetime", "numeric"):
-            col_issues.append("high_cardinality")
-
-        if stats["unique_ratio"] >= 0.999 and stats["column_type"] not in ("datetime", "numeric"):
+        if (
+            stats["unique_ratio"] >= 0.9
+            and stats["column_type"] not in ("datetime", "numeric")
+            and is_url_or_id_column(col, stats)
+        ):
             col_issues.append("id_like_column")
+
+        elif (
+            stats["unique_ratio"] > 0.9
+            and stats["column_type"] not in ("datetime", "numeric")
+        ):
+            col_issues.append("high_cardinality")
 
         if stats["column_type"] == "nested":
             col_issues.append("nested_data")

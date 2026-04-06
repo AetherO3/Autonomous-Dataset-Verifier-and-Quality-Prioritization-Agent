@@ -1,35 +1,32 @@
+import time
 import json
 import pandas as pd
 import google.genai as genai
-from google.genai import types
 from typing import Dict, List
+from google.genai import types
+from app.core.config import MODEL_NAME
 
 
 SYSTEM_PROMPT = """
 You are a data quality advisor.
 
-Return ONLY a valid JSON object. No explanations outside JSON.
+Return ONLY a valid JSON array. No explanations outside JSON.
 
-You are given:
-- column profile (dtype, null %, uniqueness, type)
-- detected issues
-- allowed options
-
-Rules:
-- Prefer safe, reversible actions
-- Avoid destructive actions unless strongly justified
-- Respect column_type (nested data should not use numeric imputations)
+You are given a list of column issues. For each, return a decision object.
 
 Allowed actions:
 ["fill_mean", "fill_median", "fill_mode", "drop_rows", "drop_column", "leave", "encode", "group_categories"]
 
 Output format:
-{
-  "explanation": str,
-  "risk": "low" | "medium" | "high",
-  "recommended_option": str,
-  "confidence": float (0-1)
-}
+[
+  {
+    "column": str,
+    "explanation": str,
+    "risk": "low" | "medium" | "high",
+    "recommended_option": str,
+    "confidence": float (0-1)
+  }
+]
 """
 
 
@@ -49,75 +46,89 @@ def build_payload(column_profile: dict, issues: List[str], options: List[str]) -
 
 def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -> dict:
     if not options:
-        return {
-            "explanation": "No options available",
-            "risk": "low",
-            "recommended_option": None,
-            "confidence": 0.0,
-        }
+        return {"explanation": "No options available", "risk": "low", "recommended_option": None, "confidence": 0.0}
 
     if "constant_column" in issues and "drop_column" in options:
         action = "drop_column"
     elif "high_missing" in issues:
-        for opt in ["fill_median", "fill_mean", "fill_mode", "leave"]:
-            if opt in options:
-                action = opt
-                break
-        else:
-            action = options[0]
+        action = next((o for o in ["fill_median", "fill_mean", "fill_mode", "leave"] if o in options), options[0])
     elif "nested_data" in issues:
         action = "leave" if "leave" in options else options[0]
     elif "high_cardinality" in issues:
-        for opt in ["encode", "group_categories", "leave"]:
-            if opt in options:
-                action = opt
-                break
-        else:
-            action = options[0]
+        action = next((o for o in ["encode", "group_categories", "leave"] if o in options), options[0])
     elif "id_like_column" in issues or "near_constant" in issues:
         action = "drop_column" if "drop_column" in options else "leave"
     else:
         action = options[0]
 
-    return {
-        "explanation": "Fallback decision applied",
-        "risk": "medium",
-        "recommended_option": action,
-        "confidence": 0.5,
-    }
+    return {"explanation": "Fallback decision applied", "risk": "medium", "recommended_option": action, "confidence": 0.5}
 
 
-def interpret_issue(client, column_profile: dict, issues: List[str], options: List[str]) -> Dict:
-    payload = build_payload(column_profile, issues, options)
-
+def parse_retry_delay(e: Exception) -> float:
     try:
-        response = client.models.generate_content(
-            model = "gemini-2.5-flash",
-            contents = f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
-            config = types.GenerateContentConfig(response_mime_type="application/json"),
-        )
-
-        text = response.text.strip()
-        result = json.loads(text)
-
-        if not isinstance(result, dict):
-            raise ValueError
-
-        required_keys = {"explanation", "risk", "recommended_option", "confidence"}
-        if not required_keys.issubset(result.keys()):
-            raise ValueError
-
-        if not isinstance(result["recommended_option"], str) or result["recommended_option"] not in options:
-            raise ValueError
-
-        if result["risk"] not in {"low", "medium", "high"}:
-            raise ValueError
-
-        result["confidence"] = float(result["confidence"])
-        result["confidence"] = max(0.0, min(1.0, result["confidence"]))
-
-        return result
-
+        msg = str(e)
+        import re
+        match = re.search(r"retryDelay.*?(\d+)s", msg)
+        return float(match.group(1)) + 1 if match else 60.0
     except Exception:
-        print("LLM response failed...\nResorting to Safe Fallback.")
-        return safe_fallback(column_profile, issues, options)
+        return 60.0
+
+
+def interpret_issues_batch(client, issues_list: List[dict]) -> Dict[str, dict]:
+    """
+    issues_list: [{"column": str, "profile": dict, "issues": list, "options": list}]
+    Returns: {column: analysis_dict}
+    """
+    payload = []
+    for item in issues_list:
+        entry = build_payload(item["profile"], item["issues"], item["options"])
+        entry["column"] = item["column"]
+        payload.append(entry)
+
+    for attempt in range(3):
+        try:
+            response = client.models.generate_content(
+                model=MODEL_NAME,
+                contents=f"{SYSTEM_PROMPT}\n\n{json.dumps(payload)}",
+                config=types.GenerateContentConfig(response_mime_type="application/json"),
+            )
+
+            text = response.text.strip()
+            results = json.loads(text)
+
+            if not isinstance(results, list):
+                raise ValueError
+
+            validated = {}
+            for r in results:
+                col = r.get("column")
+                options = next((i["options"] for i in issues_list if i["column"] == col), [])
+
+                if not col or not isinstance(r.get("recommended_option"), str):
+                    continue
+                if r["recommended_option"] not in options:
+                    continue
+                if r.get("risk") not in {"low", "medium", "high"}:
+                    continue
+
+                r["confidence"] = max(0.0, min(1.0, float(r.get("confidence", 0.5))))
+                validated[col] = r
+
+                print(f"DEBUG {r.get('column')}: action={r.get('recommended_option')} options={options}")
+
+
+            return validated
+
+        except Exception as e:
+            if "429" in str(e):
+                delay = parse_retry_delay(e)
+                print(f"Rate limited. Retrying in {delay}s...")
+                time.sleep(delay)
+            else:
+                print(f"LLM batch error: {e}")
+                break
+
+    return {
+        item["column"]: safe_fallback(item["profile"], item["issues"], item["options"])
+        for item in issues_list
+    }
