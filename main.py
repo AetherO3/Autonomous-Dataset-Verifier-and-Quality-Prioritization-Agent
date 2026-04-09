@@ -8,6 +8,7 @@ from app.core.ranker import rank_issues
 from app.core.applier import apply_actions
 from app.core.relation_analyzer import analyze_relations
 from app.logger import get_logs
+from dotenv import load_dotenv
 import google.genai as genai
 import time
 import creds
@@ -15,11 +16,14 @@ import os
 import json
 
 RELATIONS_CACHE = "data/relations_cache.json"
-
+load_dotenv()
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
-    client = genai.Client(api_key = creds.gemini_key)
+    # api_key = creds.gemini_key
+    #client = genai.Client(api_key = creds.gemini_key)
+    api_key = os.getenv("gemini_key")
+    client = genai.Client(api_key = api_key)
 
     profile = profile_dataframe(df)
 
