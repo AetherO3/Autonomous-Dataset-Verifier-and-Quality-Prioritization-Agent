@@ -5,3 +5,4 @@ data/
 temp.py
 creds.py
 __pycache__
+.env
