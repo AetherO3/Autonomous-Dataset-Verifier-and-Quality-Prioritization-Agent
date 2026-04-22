@@ -7,15 +7,46 @@ from google.genai import types
 from app.core.config import MODEL_NAME
 
 
-SYSTEM_PROMPT = """
-You are a data quality advisor.
+SYSTEM_PROMPT = """You are a data quality advisor.
 
 Return ONLY a valid JSON array. No explanations outside JSON.
 
 You are given a list of column issues. For each, return a decision object.
 
+Each column may include a "relations" field describing links with other columns.
+
 Allowed actions:
 ["fill_mean", "fill_median", "fill_mode", "drop_rows", "drop_column", "leave", "encode", "group_categories"]
+
+STRICT DECISION POLICY:
+
+- Default action is "leave" unless there is a strong reason to change.
+
+- Use "drop_column" ONLY if ALL of the following are true:
+  1. The column is clearly useless (constant, near-constant, or ID-like), AND
+  2. It provides no meaningful signal, AND
+  3. Confidence is at least 0.85
+
+- If "relations" contains:
+  - "correlated" → DO NOT drop the column
+  - "constraint" → DO NOT drop the column (data should be validated, not removed)
+
+If a column has many zeros:
+  - determine if zero is a valid value or a placeholder
+  - suggest encoding or transformation if appropriate
+
+- NEVER drop columns:
+  - due to correlation
+  - if they are numeric or meaningful features
+
+- Use:
+  - "fill_*" for missing values
+  - "encode" / "group_categories" for categorical issues
+  - "leave" if unsure
+
+CONFIDENCE RULES:
+- Only assign confidence >0.8 if the decision is very safe
+- If unsure, keep confidence ≤0.7
 
 Output format:
 [
@@ -74,7 +105,7 @@ def parse_retry_delay(e: Exception) -> float:
         return 60.0
 
 
-def interpret_issues_batch(client, issues_list: List[dict]) -> Dict[str, dict]:
+def interpret_issues_batch(client, issues_list: List[dict], relations) -> Dict[str, dict]:
     """
     issues_list: [{"column": str, "profile": dict, "issues": list, "options": list}]
     Returns: {column: analysis_dict}
@@ -83,6 +114,10 @@ def interpret_issues_batch(client, issues_list: List[dict]) -> Dict[str, dict]:
     for item in issues_list:
         entry = build_payload(item["profile"], item["issues"], item["options"])
         entry["column"] = item["column"]
+        col_relations = [r for r in relations if r["col_a"] == item["column"] or r["col_b"] == item["column"] ]
+
+        entry["relations"] = col_relations
+
         payload.append(entry)
 
     for attempt in range(3):
@@ -107,7 +142,7 @@ def interpret_issues_batch(client, issues_list: List[dict]) -> Dict[str, dict]:
                 if not col or not isinstance(r.get("recommended_option"), str):
                     continue
                 if r["recommended_option"] not in options:
-                    continue
+                    r["recommended_option"] = options[0] if options else "leave"
                 if r.get("risk") not in {"low", "medium", "high"}:
                     continue
 

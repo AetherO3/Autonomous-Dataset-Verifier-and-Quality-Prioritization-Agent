@@ -32,7 +32,7 @@ def detect_issues(profile: dict, df: pd.DataFrame) -> dict:
 
         if stats["unique"] == 1:
             col_issues.append("constant_column")
-        elif stats["unique"] > 1 and stats["unique_ratio"] < 0.01:
+        elif ( stats["column_type"] == "numeric" and stats["std"] is not None and stats["std"] < 1e-3):
             col_issues.append("near_constant")
 
         if (

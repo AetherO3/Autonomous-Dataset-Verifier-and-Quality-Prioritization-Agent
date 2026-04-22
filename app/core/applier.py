@@ -5,6 +5,13 @@ from app.core.config import CONFIDENCE_THRESHOLD
 FLAG_THRESHOLD = 0.5
 
 
+def is_relation_sensitive(col, relations):
+    for r in relations or []:
+        if col in [r["col_a"], r["col_b"]]:
+            if r["relation"] == "correlated":
+                return True
+    return False
+
 def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.DataFrame, list]:
     original_df = df.copy()
     cleaned_df = df.copy()
@@ -35,6 +42,27 @@ def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.Data
         before = cleaned_df[col].copy()
 
         if action == "drop_column":
+
+            if confidence < 0.8:
+                flagged.append({
+                    "column": col,
+                    "action": action,
+                    "confidence": confidence,
+                    "reason": "Drop blocked: confidence too low",
+                })
+                log_operation(col, "blocked_drop_low_conf", before, None)
+                continue
+
+            if is_relation_sensitive(col, report.get("relations")):
+                flagged.append({
+                    "column": col,
+                    "action": action,
+                    "confidence": confidence,
+                    "reason": "Drop blocked: correlated feature",
+                })
+                log_operation(col, "blocked_drop_relation", before, None)
+                continue
+
             cleaned_df.drop(columns=[col], inplace=True)
             log_operation(col, action, before, None)
             continue
