@@ -1,16 +1,21 @@
 import pandas as pd
 from app.logger import log_operation
-from app.core.config import CONFIDENCE_THRESHOLD
+from app.core.config import CONFIDENCE_THRESHOLD, FLAG_THRESHOLD
 
-FLAG_THRESHOLD = 0.5
+ID_ISSUES = {"id_like_column", "constant_column"}
 
 
-def is_relation_sensitive(col, relations):
+def is_relation_sensitive(col, issues, relations):
+    # ID-like and constant columns should always be droppable
+    # regardless of what the relation analyser found
+    if set(issues) & ID_ISSUES:
+        return False
     for r in relations or []:
         if col in [r["col_a"], r["col_b"]]:
             if r["relation"] == "correlated":
                 return True
     return False
+
 
 def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.DataFrame, list]:
     original_df = df.copy()
@@ -21,6 +26,7 @@ def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.Data
         col = issue["column"]
         action = issue["analysis"]["recommended_option"]
         confidence = issue["analysis"].get("confidence", 0)
+        col_issues = issue.get("issues", [])
 
         if col not in cleaned_df.columns:
             continue
@@ -42,18 +48,7 @@ def apply_actions(df: pd.DataFrame, report: dict) -> tuple[pd.DataFrame, pd.Data
         before = cleaned_df[col].copy()
 
         if action == "drop_column":
-
-            if confidence < 0.8:
-                flagged.append({
-                    "column": col,
-                    "action": action,
-                    "confidence": confidence,
-                    "reason": "Drop blocked: confidence too low",
-                })
-                log_operation(col, "blocked_drop_low_conf", before, None)
-                continue
-
-            if is_relation_sensitive(col, report.get("relations")):
+            if is_relation_sensitive(col, col_issues, report.get("relations")):
                 flagged.append({
                     "column": col,
                     "action": action,

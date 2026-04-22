@@ -1,3 +1,10 @@
+import os
+import json
+import time
+import argparse
+import google.genai as genai
+from dotenv import load_dotenv
+
 from app.core.llm_interpreter import interpret_issues_batch, safe_fallback
 from app.core.recommender import recommend_actions
 from app.dataProcessor.issue_detector import detect_issues
@@ -8,35 +15,34 @@ from app.core.ranker import rank_issues
 from app.core.applier import apply_actions
 from app.core.relation_analyzer import analyze_relations
 from app.logger import get_logs
-from dotenv import load_dotenv
-import google.genai as genai
-import time
-import creds
-import os
-import json
 
-RELATIONS_CACHE = "data/relations_cache.json"
 load_dotenv()
+
+
+def get_cache_path(dataset_name: str) -> str:
+    base = os.path.splitext(os.path.basename(dataset_name))[0]
+    return os.path.join("data", f"{base}_cache.json")
+
 
 def run_pipeline(dataset_name: str):
     df = load_dataset(dataset_name)
-    # api_key = creds.gemini_key
-    #client = genai.Client(api_key = creds.gemini_key)
+
     api_key = os.getenv("gemini_key")
-    client = genai.Client(api_key = api_key)
+    client = genai.Client(api_key=api_key)
 
     profile = profile_dataframe(df)
 
-    # relations = analyze_relations(client, profile)
-    if os.path.exists(RELATIONS_CACHE):
-        with open(RELATIONS_CACHE) as f:
+    relations_cache = get_cache_path(dataset_name)
+
+    if os.path.exists(relations_cache):
+        with open(relations_cache) as f:
             relations = json.load(f)
     else:
         relations = analyze_relations(client, profile)
-        with open(RELATIONS_CACHE, "w") as f:
-            json.dump(relations, f)
-
-    time.sleep(65)
+        os.makedirs("data", exist_ok=True)
+        with open(relations_cache, "w") as f:
+            json.dump(relations, f, indent=2)
+        time.sleep(65)
 
     issues = detect_issues(profile, df)
 
@@ -46,7 +52,8 @@ def run_pipeline(dataset_name: str):
         column_issues = issues.get(col, [])
         if not column_issues:
             continue
-        options = recommend_actions(column_profile, column_issues)
+        col_relations = [r for r in relations if r["col_a"] == col or r["col_b"] == col]
+        options = recommend_actions(column_profile, column_issues, col_relations)
         issues_input.append({
             "column": col,
             "profile": column_profile,
@@ -54,7 +61,7 @@ def run_pipeline(dataset_name: str):
             "options": options,
         })
 
-    batch_results = interpret_issues_batch(client, issues_input)
+    batch_results = interpret_issues_batch(client, issues_input, relations)
 
     all_issues = []
     for item in issues_input:
@@ -81,12 +88,12 @@ def run_pipeline(dataset_name: str):
 
     print("\n Column Issues ")
     for idx, r in enumerate(report["issues"]):
-        conf = r['analysis']['confidence']
-        action = r['analysis']['recommended_option']
-        status = "APPLY" if conf >= 0.7 else "FLAG" if conf >= 0.5 else "SKIP"
+        conf = r["analysis"]["confidence"]
+        action = r["analysis"]["recommended_option"]
+        status = "APPLY" if conf >= 0.8 else "FLAG" if conf >= 0.5 else "SKIP"
         print(f"{idx+1} - Column: {r['column']}")
         print(f"   Issues: {r['issues']}")
-        print(f"   Action: {action} (confidence: {conf}) → {status}")
+        print(f"   Action: {action} (confidence: {conf}) -> {status}")
 
     if flagged:
         print("\n Flagged (low confidence) ")
@@ -100,19 +107,19 @@ def run_pipeline(dataset_name: str):
     for entry in get_logs():
         print(f"  [{entry['column']}] {entry['action']} @ {entry['timestamp']}")
 
+    os.makedirs("data", exist_ok=True)
+    cleaned_df.to_csv("data/cleaned.csv", index=False)
+    with open("data/cleaning_log.json", "w") as f:
+        json.dump(get_logs(), f, indent=2)
+
+    print("\nSaved: data/cleaned.csv")
+    print("Saved: data/cleaning_log.json")
+
     return report, cleaned_df, original_df, flagged
 
 
 if __name__ == "__main__":
-    report, cleaned_df, original_df, flagged = run_pipeline("data/amazon.csv")
-
-os.makedirs("data", exist_ok = True)
-
-cleaned_df.to_csv("data/cleaned.csv", index=False)
-
-cleaning_log = get_logs()
-with open("data/cleaning_log.json", "w") as f:
-    json.dump(cleaning_log, f, indent=2)
-
-print("\nSaved: data/Cleaned.csv")
-print(f"\nSaved: data/Cleaning Log.json")
+    parser = argparse.ArgumentParser(description="Run the dataset cleaning pipeline.")
+    parser.add_argument("dataset", help="Path to dataset file or Kaggle dataset identifier")
+    args = parser.parse_args()
+    run_pipeline(args.dataset)

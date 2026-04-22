@@ -1,9 +1,10 @@
+import re
 import time
 import json
 import pandas as pd
 import google.genai as genai
-from typing import Dict, List
 from google.genai import types
+from typing import Dict, List
 from app.core.config import MODEL_NAME
 
 
@@ -20,24 +21,26 @@ Allowed actions:
 
 STRICT DECISION POLICY:
 
-- Default action is "leave" unless there is a strong reason to change.
+ID-LIKE COLUMNS (issue = "id_like_column"):
+- ALWAYS recommend "drop_column" with confidence >= 0.9
+- Ignore any relations entries for this column
+- ID columns like product_id, img_link, product_link, user_id, review_id
+  provide no analytical signal and must be dropped
+
+CONSTANT COLUMNS (issue = "constant_column"):
+- ALWAYS recommend "drop_column" with confidence >= 0.9
+
+For all other columns:
+- Default action is "leave" unless there is a strong reason to change
 
 - Use "drop_column" ONLY if ALL of the following are true:
-  1. The column is clearly useless (constant, near-constant, or ID-like), AND
+  1. The column is clearly useless (near-constant), AND
   2. It provides no meaningful signal, AND
   3. Confidence is at least 0.85
 
 - If "relations" contains:
-  - "correlated" → DO NOT drop the column
-  - "constraint" → DO NOT drop the column (data should be validated, not removed)
-
-If a column has many zeros:
-  - determine if zero is a valid value or a placeholder
-  - suggest encoding or transformation if appropriate
-
-- NEVER drop columns:
-  - due to correlation
-  - if they are numeric or meaningful features
+  - "correlated" -> DO NOT drop the column (applies to feature columns only)
+  - "constraint" -> DO NOT drop the column
 
 - Use:
   - "fill_*" for missing values
@@ -45,8 +48,8 @@ If a column has many zeros:
   - "leave" if unsure
 
 CONFIDENCE RULES:
-- Only assign confidence >0.8 if the decision is very safe
-- If unsure, keep confidence ≤0.7
+- Only assign confidence > 0.8 if the decision is very safe
+- If unsure, keep confidence <= 0.7
 
 Output format:
 [
@@ -77,47 +80,66 @@ def build_payload(column_profile: dict, issues: List[str], options: List[str]) -
 
 def safe_fallback(column_profile: dict, issues: List[str], options: List[str]) -> dict:
     if not options:
-        return {"explanation": "No options available", "risk": "low", "recommended_option": None, "confidence": 0.0}
+        return {
+            "explanation": "No options available",
+            "risk": "low",
+            "recommended_option": None,
+            "confidence": 0.0,
+        }
+
+    if "id_like_column" in issues:
+        action = "drop_column" if "drop_column" in options else "leave"
+        return {
+            "explanation": "ID-like column dropped by fallback",
+            "risk": "low",
+            "recommended_option": action,
+            "confidence": 0.9,
+        }
 
     if "constant_column" in issues and "drop_column" in options:
         action = "drop_column"
     elif "high_missing" in issues:
-        action = next((o for o in ["fill_median", "fill_mean", "fill_mode", "leave"] if o in options), options[0])
+        action = next(
+            (o for o in ["fill_median", "fill_mean", "fill_mode", "leave"] if o in options),
+            options[0]
+        )
     elif "nested_data" in issues:
         action = "leave" if "leave" in options else options[0]
     elif "high_cardinality" in issues:
-        action = next((o for o in ["encode", "group_categories", "leave"] if o in options), options[0])
-    elif "id_like_column" in issues or "near_constant" in issues:
+        action = next(
+            (o for o in ["encode", "group_categories", "leave"] if o in options),
+            options[0]
+        )
+    elif "near_constant" in issues:
         action = "drop_column" if "drop_column" in options else "leave"
     else:
         action = options[0]
 
-    return {"explanation": "Fallback decision applied", "risk": "medium", "recommended_option": action, "confidence": 0.5}
+    return {
+        "explanation": "Fallback decision applied",
+        "risk": "medium",
+        "recommended_option": action,
+        "confidence": 0.5,
+    }
 
 
 def parse_retry_delay(e: Exception) -> float:
     try:
-        msg = str(e)
-        import re
-        match = re.search(r"retryDelay.*?(\d+)s", msg)
+        match = re.search(r"retryDelay.*?(\d+)s", str(e))
         return float(match.group(1)) + 1 if match else 60.0
     except Exception:
         return 60.0
 
 
-def interpret_issues_batch(client, issues_list: List[dict], relations) -> Dict[str, dict]:
-    """
-    issues_list: [{"column": str, "profile": dict, "issues": list, "options": list}]
-    Returns: {column: analysis_dict}
-    """
+def interpret_issues_batch(client, issues_list: List[dict], relations: list) -> Dict[str, dict]:
     payload = []
     for item in issues_list:
         entry = build_payload(item["profile"], item["issues"], item["options"])
         entry["column"] = item["column"]
-        col_relations = [r for r in relations if r["col_a"] == item["column"] or r["col_b"] == item["column"] ]
-
-        entry["relations"] = col_relations
-
+        entry["relations"] = [
+            r for r in relations
+            if r["col_a"] == item["column"] or r["col_b"] == item["column"]
+        ]
         payload.append(entry)
 
     for attempt in range(3):
@@ -128,29 +150,25 @@ def interpret_issues_batch(client, issues_list: List[dict], relations) -> Dict[s
                 config=types.GenerateContentConfig(response_mime_type="application/json"),
             )
 
-            text = response.text.strip()
-            results = json.loads(text)
+            results = json.loads(response.text.strip())
 
             if not isinstance(results, list):
-                raise ValueError
+                raise ValueError("Response is not a list")
 
             validated = {}
             for r in results:
                 col = r.get("column")
-                options = next((i["options"] for i in issues_list if i["column"] == col), [])
-
+                options = next(
+                    (i["options"] for i in issues_list if i["column"] == col), []
+                )
                 if not col or not isinstance(r.get("recommended_option"), str):
                     continue
                 if r["recommended_option"] not in options:
                     r["recommended_option"] = options[0] if options else "leave"
                 if r.get("risk") not in {"low", "medium", "high"}:
                     continue
-
                 r["confidence"] = max(0.0, min(1.0, float(r.get("confidence", 0.5))))
                 validated[col] = r
-
-                print(f"DEBUG {r.get('column')}: action={r.get('recommended_option')} options={options}")
-
 
             return validated
 
