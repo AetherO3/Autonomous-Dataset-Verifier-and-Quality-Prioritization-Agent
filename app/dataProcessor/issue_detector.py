@@ -3,7 +3,7 @@ import pandas as pd
 
 
 def is_url_or_id_column(col: str, stats: dict) -> bool:
-    name_hints = ("_id", "_link", "_url", "_uri", "_href", "_src")
+    name_hints = ("_id", "_link", "_url", "_uri", "_href", "_src", "asin", "parent_asin")
     if any(col.lower().endswith(h) for h in name_hints):
         return True
     sample_vals = [str(v) for v in stats.get("sample", [])]

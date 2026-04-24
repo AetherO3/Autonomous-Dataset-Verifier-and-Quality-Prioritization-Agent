@@ -6,8 +6,6 @@ ID_ISSUES = {"id_like_column", "constant_column"}
 
 
 def is_relation_sensitive(col, issues, relations):
-    # ID-like and constant columns should always be droppable
-    # regardless of what the relation analyser found
     if set(issues) & ID_ISSUES:
         return False
     for r in relations or []:
