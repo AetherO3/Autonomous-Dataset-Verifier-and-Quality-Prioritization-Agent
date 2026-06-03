@@ -52,8 +52,10 @@ def run_pipeline(dataset_name: str):
         column_issues = issues.get(col, [])
         if not column_issues:
             continue
-        col_relations = [r for r in relations if r["col_a"] == col or r["col_b"] == col]
-        options = recommend_actions(column_profile, column_issues, col_relations)
+        col_relations = [r for r in relations if r["col_a"]
+                         == col or r["col_b"] == col]
+        options = recommend_actions(
+            column_profile, column_issues, col_relations)
         issues_input.append({
             "column": col,
             "profile": column_profile,
@@ -61,13 +63,21 @@ def run_pipeline(dataset_name: str):
             "options": options,
         })
 
-    batch_results = interpret_issues_batch(client, issues_input, relations)
+    LLM_CACHE = "data/llm_cache.json"
+
+    if os.path.exists(LLM_CACHE):
+        batch_results = json.load(open(LLM_CACHE))
+    else:
+        batch_results = interpret_issues_batch(client, issues_input, relations)
+        with open(LLM_CACHE, "w") as f:
+            json.dump(batch_results, f, indent=2)
 
     all_issues = []
     for item in issues_input:
         col = item["column"]
         analysis = batch_results.get(
-            col, safe_fallback(item["profile"], item["issues"], item["options"])
+            col, safe_fallback(
+                item["profile"], item["issues"], item["options"])
         )
         all_issues.append({
             "column": col,
@@ -84,7 +94,8 @@ def run_pipeline(dataset_name: str):
     if relations:
         print("\n Semantic Relations ")
         for r in relations:
-            print(f"  [{r['relation']}] {r['col_a']} <-> {r['col_b']} | {r['suggestion']} (conf: {r['confidence']})")
+            print(f"  [{r['relation']}] {r['col_a']} <-> {r['col_b']
+                                                          } | {r['suggestion']} (conf: {r['confidence']})")
 
     print("\n Column Issues ")
     for idx, r in enumerate(report["issues"]):
@@ -98,14 +109,16 @@ def run_pipeline(dataset_name: str):
     if flagged:
         print("\n Flagged (low confidence) ")
         for f in flagged:
-            print(f"  {f['column']} | {f['action']} | confidence: {f['confidence']:.2f}")
+            print(f"  {f['column']} | {f['action']
+                                       } | confidence: {f['confidence']:.2f}")
 
     print(f"\nOriginal shape: {original_df.shape}")
     print(f"Cleaned shape:  {cleaned_df.shape}")
 
     print("\n Logs ")
     for entry in get_logs():
-        print(f"  [{entry['column']}] {entry['action']} @ {entry['timestamp']}")
+        print(f"  [{entry['column']}] {
+              entry['action']} @ {entry['timestamp']}")
 
     os.makedirs("data", exist_ok=True)
     cleaned_df.to_csv("data/cleaned.csv", index=False)
@@ -119,7 +132,9 @@ def run_pipeline(dataset_name: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Run the dataset cleaning pipeline.")
-    parser.add_argument("dataset", help="Path to dataset file or Kaggle dataset identifier")
+    parser = argparse.ArgumentParser(
+        description="Run the dataset cleaning pipeline.")
+    parser.add_argument(
+        "dataset", help="Path to dataset file or Kaggle dataset identifier")
     args = parser.parse_args()
     run_pipeline(args.dataset)
