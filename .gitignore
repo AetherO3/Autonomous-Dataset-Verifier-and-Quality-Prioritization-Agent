@@ -7,4 +7,5 @@ creds.py
 __pycache__
 .env
 .streamlit/
-project.zip
+trash/
+.zip

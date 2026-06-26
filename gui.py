@@ -83,7 +83,16 @@ if uploaded:
                 "options": options,
             })
 
-        batch_results = interpret_issues_batch(client, issues_input, relations)
+        # batch_results = interpret_issues_batch(client, issues_input, relations)
+
+        LLM_CACHE = "data/llm_cache.json"
+
+        if os.path.exists(LLM_CACHE):
+            batch_results = json.load(open(LLM_CACHE))
+        else:
+            batch_results = interpret_issues_batch(client, issues_input, relations)
+            with open(LLM_CACHE, "w") as f:
+                json.dump(batch_results, f, indent=2)
 
         all_issues = []
         for item in issues_input:
